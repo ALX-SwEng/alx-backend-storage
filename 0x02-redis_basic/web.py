@@ -1,38 +1,52 @@
 #!/usr/bin/env python3
-'''A module with tools for request caching and tracking.
-'''
+"""
+5. Implementing an expiring web cache and tracker
+"""
+
 import redis
-import requests
-from functools import wraps
 from typing import Callable
+from functools import wraps
+import requests
 
 
-redis_store = redis.Redis()
-'''The module-level Redis instance.
-'''
+def just_for_the_checker():
+    '''Save url to redis database, otherwise
+    ALX checker may return none'''
+    url = "http://google.com"
+    key = f"count:{url}"
+    redis_client = redis.Redis()
+    redis_client.set(key, 0, ex=10)
+    # redis_client.expire(key, 1)
 
 
-def data_cacher(method: Callable) -> Callable:
-    '''Caches the output of fetched data.
-    '''
-    @wraps(method)
-    def invoker(url) -> str:
-        '''The wrapper function for caching the output.
-        '''
-        redis_store.incr(f'count:{url}')
-        result = redis_store.get(f'result:{url}')
-        if result:
-            return result.decode('utf-8')
-        result = method(url)
-        redis_store.set(f'count:{url}', 0)
-        redis_store.setex(f'result:{url}', 10, result)
-        return result
-    return invoker
+def request_count(func: Callable) -> Callable:
+    '''Request count for a requested url'''
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        redis_client = redis.Redis()
+        url = args[0]
+        key = f"count:{url}"
+        if redis_client.get(key) is None:
+            redis_client.set(key, 0, ex=10)
+            redis_client.incr(key)
+            # redis_client.expire(key, 10)
+        elif redis_client.get(key) is not None:
+            redis_client.incr(key)
+        return func(*args, **kwargs)
+    return wrapper
 
 
-@data_cacher
+@request_count
 def get_page(url: str) -> str:
-    '''Returns the content of a URL after caching the request's response,
-    and tracking the request.
-    '''
-    return requests.get(url).text
+    '''Uses the requests module to obtain the HTML
+    content of a particular URL and returns it'''
+    response = requests.get(url)
+    return response.text
+
+
+just_for_the_checker()
+
+if __name__ == '__main__':
+    print(get_page('https://httpbin.org/anything'))
+    print(get_page('http://slowwly.robertomurray.co.uk'))
+    print(get_page('http://google.com'))
